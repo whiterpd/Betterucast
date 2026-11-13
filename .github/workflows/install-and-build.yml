@@ -1,0 +1,78 @@
+
+name: Install UCast Bridge and Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'UCastBridge-Android-Builder.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  install-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Check for source archive
+        run: |
+          test -f UCastBridge-Android-Builder.zip
+
+      - name: Extract and install project
+        run: |
+          mkdir -p "$RUNNER_TEMP/ucast-source"
+          unzip -q UCastBridge-Android-Builder.zip \
+            -d "$RUNNER_TEMP/ucast-source"
+          PROJECT="$RUNNER_TEMP/ucast-source/UCastBridge"
+          test -f "$PROJECT/app/build.gradle"
+          test -f "$PROJECT/.github/workflows/build-apk.yml"
+          cp -a "$PROJECT/." "$GITHUB_WORKSPACE/"
+          rm -f UCastBridge-Android-Builder.zip
+
+      - name: Commit installed project
+        env:
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Install UCast Bridge Android project"
+            git push origin "HEAD:${BRANCH_NAME}"
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UCastBridge-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          
